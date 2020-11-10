@@ -1,0 +1,45 @@
+;; 1. Based on: m25
+;; 2. Description: model_to_run_over_all_treatments_with_base
+;; x1. Author: user
+$PROBLEM    TGI
+$INPUT      ID TREAT TIME DV DOSE CMT TID AMT EVID OCC KG
+$DATA      data_treatment.csv IGNORE=@
+$SUBROUTINE ADVAN13 TRANS=1 TOL=9
+$MODEL      COMP=(DOSE,DEFDOSE) COMP=(TUM,DEFOBS)
+$PK
+"FIRST
+" USE PRCOM_INT, ONLY: IMAX 
+
+KD=(THETA(1)/1000)*EXP(ETA(1))
+KR=(THETA(2)/1000)*EXP(ETA(2))
+A_0(2)=THETA(3)+ETA(3)
+
+
+
+" IMAX=30000000 
+ 
+$DES
+DADT(1)=0
+DADT(2)=KG*A(2) - KD*A(2)*EXP(-KR*T)*A(1)
+
+$ERROR
+IPRED=F
+Y=F*(1+EPS(1)) + EPS(2)
+
+$THETA  
+ (0,3.77) ; kd
+ (0,0.61) ; kresi
+ (0,300);base size
+
+$OMEGA  
+ 0.00036  ;        kd_
+ 5.49  ;         kr
+ .1;
+
+$SIGMA  
+ 0.339
+ 0 FIX
+$ESTIMATION METHOD=1 INTER MAXEVAL=9999 PRINT=1 NOABORT
+$COVARIANCE
+$TABLE ID TREAT TIME DV DOSE CMT TID AMT EVID OCC IPRED PRED kg kr kd RES WRES CWRES NOPRINT FILE=m4.tab NOAPPEND NOHEADER
+
