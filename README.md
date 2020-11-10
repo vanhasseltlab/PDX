@@ -12,9 +12,9 @@ Data preparation and data analsysis should be conducted in order of script names
 4. data_preparation_omics
 5. extract_NONMEM_results
 6. data_preparation_LASSO
-7.
-  a. predictions_MVLASSO
-  b. pathway_selection_groupLASSO
+7. 
+    1. predictions_MVLASSO
+    2. pathway_selection_groupLASSO
   
 
 ### Data
