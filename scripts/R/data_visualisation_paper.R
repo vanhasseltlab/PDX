@@ -11,6 +11,7 @@ library(sna)
 library(RxODE)
 library(jpeg)
 library(grid)
+library(pdftools)
 
 # import data
 #From script 2
@@ -24,9 +25,9 @@ load("data/clean/outcomes_allData.Rdata")
 #used in Figure 2, 3, S1
 
 #From script 7a 
-load("results/MVLasso_predictions/lambda_repeatedCV_cn.Rdata")    
-load("results/MVLasso_predictions/predictions_repeatedCV_cn.Rdata")
-load("results/MVLasso_predictions/sABC_over_time.Rdata")
+load("results/MVLasso_predictions/KGKD - lambda_repeatedCV.Rdata")    
+load("results/MVLasso_predictions/KGKD - predictions_repeatedCV.Rdata")
+load("results/MVLasso_predictions/KGKD - sABC_over_time.Rdata")
 #used in Figure 3
 
 #From script 7b
@@ -180,14 +181,13 @@ observed <- allData %>% filter(Treat_name == "encorafenib" & ID_name %in% ids & 
                               levels = unique(paste("sABC =", round(sABC_model, 3))[order(sABC_model)])))
 
 #table with values for this plot
-sABC_treat_total <- sABC_treat_total %>% mutate(Treat_name = tools::toTitleCase(as.character(Treat_name)))
-sABC_treats <- sABC_treat_total %>% filter(time == 56) %>% filter(Treat_name %in% tools::toTitleCase(chosen_treatments)) %>% 
+sABC_treats <- sABC_treat_total %>% filter(time == 56) %>%
   group_by(Treat_name) %>% summarize(mean_sABC = mean(sABC_model), sd_sABC = sd(sABC_model),
                                      median_sABC = median(sABC_model), min_sABC = min(sABC_model),
                                      max_sABC = max(sABC_model), percentile75 = quantile(sABC_model, 0.75))
-
 order_treats <- as.character(sABC_treats$Treat_name[order(sABC_treats$median_sABC)])
 
+sABC_treats <- sABC_treats %>% filter(Treat_name %in% chosen_treatments)
 
 #Figure 3A
 figure3a <- data_abc %>% left_join(sABC[, c("sABC_model","ID_name")]) %>% 
@@ -211,7 +211,7 @@ figure3a <- data_abc %>% left_join(sABC[, c("sABC_model","ID_name")]) %>%
         legend.box.margin=margin(-10, -10, -10, -10))
 
 #Figure 3B
-figure3b <- sABC_treat_total %>% filter(time == 56) %>% filter(Treat_name %in% tools::toTitleCase(chosen_treatments)) %>% 
+figure3b <- sABC_treat_total %>% filter(time == 56) %>% filter(Treat_name %in% chosen_treatments) %>% 
   mutate(Treat_name = fct_relevel(Treat_name, order_treats)) %>% 
   ggplot(aes(y = sABC_model, x = Treat_name)) +
   geom_boxplot(outlier.shape = NA, fill = "#FFE3B2", colour = "black") +
@@ -332,9 +332,9 @@ pdf("paper/figures/Figure5_network_pathways.pdf", width = 8, height = 5)
 print(figure5)
 dev.off()
 
-#Figure S1: P1 - Boxplot residuals NONMEM #-----------------------------------------------------------------------------------------####
+#Figure S1: P1 - Boxplot residuals NONMEM #--------------------------------------------------------------------------####
 #prepare data
-plots1_data <- allData %>% mutate(Treat_name = tools::toTitleCase(Treat_name))
+plots1_data <- allData
 medians_order <- plots1_data %>% group_by(Treat_name) %>% 
   summarize(median_CWRES = median(CWRES))
 
@@ -346,14 +346,177 @@ figures1 <- ggplot(plots1_data, aes(y = CWRES, x = Treat_name)) +
   geom_boxplot() +
   labs(x = "Treatment") +
   theme_bw() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 0.95, vjust = 0.2))
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.2))
 
 
 pdf(file = "paper/figures/FigureS1_nonmem_GOF.pdf", width = 8, height = 7)
 print(figures1)
 dev.off()
 
-#Bad nomem estimates = LFW527 + binimetinib and TAS266
+
+#Figure S2: P1 - Visual check NONMEM estimation #-----------------------------------------------------------####
+PlotGrowthCurves <- function(allData, untreated, sorted = TRUE, treatments = NULL) {
+  allData$ID_kd <- paste0(allData$ID_name, ", kg: ", allData$kg, "\nkd: ", allData$kd, "\nkr: ", allData$kr)
+  
+  predict_col <- "#F46E32"
+  untreated_col <- "#5CB1EB"
+  observation_col <- "#001158"
+  
+  if (is.null(treatments)) {
+    treatments <- sort(unique(allData$Treat_name))
+  }
+  
+  p_list <- list()
+  for (treat in treatments) {
+    dat1 <- allData[allData$Treat_name == treat, ]
+    dat2 <- untreated[untreated$ID %in% dat1$ID, ]
+    if (treat == "untreated") {
+      dat1$ID_kd <- as.factor(dat1$ID_name)
+      dat2 <- merge(dat2, unique(dat1[c("ID", "ID_kd")]), by = "ID")
+      plot_col <- untreated_col
+    } else {
+      dat2 <- merge(dat2, unique(dat1[, c("ID", "ID_kd")]), by = "ID")
+      plot_col <- predict_col
+    }
+    if (is.null(allData$converged)){
+      title_plot <- paste0("Treatment ", treat)
+    } else {
+      title_plot <- paste0("Treatment ", treat, c(", NOT CONVERGED", ", CONVERGED")[dat1$converged[1] + 1])
+    }
+    p_list[[treat]] <- ggplot(dat1, aes(x = TIME, group = ID_kd)) +
+      geom_point(aes(y = DV), colour = observation_col) +
+      geom_line(data = dat2, aes(y = IPRED_NAT), colour = untreated_col, linetype = "dashed") +
+      geom_line(aes(y = IPRED), colour = plot_col) +
+      facet_wrap(~ ID_kd) +
+      ggtitle(title_plot) +
+      ylim(0, max(1200, max(dat1$DV))) +
+      theme_bw() +
+      theme(plot.title = element_text(size = 16, face = "bold"))
+  }
+  return(p_list)
+}
+
+untreated_plot <- untreated
+names(untreated_plot)[11] <- "IPRED_NAT"
+plotsChosen <- PlotGrowthCurves(allData, untreated_plot, sorted = TRUE)
+
+pdf(file = "paper/figures/FigureS2_estimated_growth_curves.pdf", width = 20, height = 16)
+for (treat in names(plotsChosen)) {
+  print(plotsChosen[[treat]])
+}
+dev.off()
+
+caption_S2 <- "Set of figures with the non-linear mixed effect model fits for all PDXs. Within every treatment, the volume (DV) is plotted against time (TIME) for every PDX. The modeled 
+natural growth curves are shown (blue dashed line) and the model (red solid line) fit to the observed values (dark blue points). Tumor growth curves from treatment TAS266 
+show a bad model fit."
 
 
+pdf('paper/figures/FigureS2_caption.pdf',width = 20, height = 3)
+old_mar <- par()$mar
+par(mar= rep(0,4))
+plot(NA, xlim=c(0,2), ylim=c(-0.5,0.8), bty='n',
+     xaxt='n', yaxt='n', xlab='', ylab='')
+text(0, 0.5, "Supplementary Figure S2:", font = 2, adj = 0, cex = 1.5)
+text(0, 0,caption_S2, adj = 0, font = 1, cex = 1.5)
+par(mar = old_mar)
+dev.off()
+
+pdf_combine(c("paper/figures/FigureS2_caption.pdf", "paper/figures/FigureS2_estimated_growth_curves.pdf"), 
+            output = "paper/figures/FigureS2_estimated_growth_curves_with_caption.pdf")
+
+#Figure S3: P3 - prediction errors with and without KR #----------------------------------------------------####
+
+model_parameters <- c("KGKDKR", "KGKD")
+sABC_models <- NULL
+all_results_df <- NULL
+long_outcomes <- outcomes %>% ungroup() %>% select(c(ID_name, Treat_name, kg, kd, kr)) %>% 
+  pivot_longer(-c(ID_name, Treat_name), names_to = "parameter", values_to = "estimated")
+
+for (m_p in model_parameters) {
+  prefix_output <- paste0(m_p, " - ")
+  #load data
+  load(paste0("results/MVLasso_predictions/", prefix_output, "sABC_over_time.Rdata"))
+  load(paste0("results/MVLasso_predictions/", prefix_output, "predictions_repeatedCV.Rdata"))# predictions smooth curves
+  
+  chosen_treatments <- unique(treatments[sapply(smooth_curves, function(x) any(x[-1, "cverror"] < x[1, "cverror"]))])
+  chosen_treatments <-  chosen_treatments[!chosen_treatments %in% c("TAS266", "LFW527 + binimetinib")]
+  
+  sABC_models <- rbind(sABC_models, sABC_treat_total %>% filter(time == 56) %>% 
+                         select(sABC_intercept, sABC_model, time, ID_name, Treat_name)%>%
+                         mutate(included_parameters = m_p,
+                                chosen = Treat_name %in% chosen_treatments))
+
+
+  load(paste0("results/MVLasso_predictions/", prefix_output, "predictions_repeatedCV.Rdata"))
+  
+  if (is.null(names(predictions))) {
+    names(predictions) <- treatments
+  }
+  dat_all_t <- NULL
+  for (treat in treatments) {
+    dat_t <- data.frame(kg = rowMeans(predictions[[treat]][, "kg", ]), Treat_name = treat, stringsAsFactors = F,
+                        kd = rowMeans(predictions[[treat]][, "kd", ]),
+                        kr = ifelse("kr" %in% colnames(predictions[[treat]]), rowMeans(predictions[[treat]][, "kr", ], na.rm = T), 0))
+    dat_t$ID_name <- rownames(dat_t)
+    dat_all_t <- rbind(dat_all_t, dat_t)
+  }
+  all_results_df <- rbind(all_results_df, dat_all_t %>% 
+                            pivot_longer(-c(ID_name, Treat_name), names_to = "parameter", values_to = "predicted") %>% 
+                            mutate(included_parameters = m_p) %>% right_join(long_outcomes))
+}
+all_results_df <- all_results_df %>% left_join(sABC_models)
+
+#select treatments with non-zero kr
+kr_treats <- NULL
+load("data/clean/lasso_data_filtered.Rdata")
+for (i in 1:length(treatments)) {
+  dat_Y <- outcomes[outcomes$Treat_name == treatments[i], ]
+  rownames(dat_Y) <- dat_Y$ID_name
+  ids <- intersect(rownames(X_cn), dat_Y$ID_name)
+  n <- length(ids)
+  outcome <- c("kg", "kd", "kr")
+
+    #Model with or without KR
+  if (var(dat_Y[ids, "kr"]) > 0 & length(unique(unlist(dat_Y[ids, "kr"]))) > 2) {
+    kr_treats <- c(kr_treats, treatments[i])
+  }
+}
+
+#plot prediction error Kg and Kd
+figures3a <- all_results_df %>%
+  filter(Treat_name != "untreated" & ID_name != "X-4215") %>% 
+  filter(Treat_name %in% kr_treats & parameter != "kr") %>% 
+  mutate(Treat_name = fct_relevel(Treat_name, order_treats)) %>% 
+  mutate(prediction_error = estimated - predicted) %>% 
+  ggplot(aes(y = abs(prediction_error), x = Treat_name, fill = included_parameters)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_hline(yintercept = 0, colour = "#B2B2B2", linetype = 1) +
+  labs(y = "Absolute prediction error (parameter)", tag = "A") +
+  scale_y_continuous(breaks = seq(-2, 2, by = 0.05), limits = c(0, 0.155)) +
+  scale_fill_manual(values = c("grey55", "white")) +
+  facet_wrap(~ parameter, ncol = 1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.95, vjust = 0.2), legend.position = "top",
+        panel.grid.major.x = element_blank(), panel.grid.major.y = element_line(color = "#B2B2B2"), 
+        panel.grid.minor.y = element_line(color = "#B2B2B2"), axis.title.x = element_blank())
+
+#plot prediction error sABC
+figures3b <- all_results_df %>%
+  filter(Treat_name != "untreated" & ID_name != "X-4215") %>% 
+  filter(Treat_name %in% kr_treats & parameter == "kg") %>% 
+  mutate(Treat_name = fct_relevel(Treat_name, order_treats)) %>% 
+  ggplot(aes(y = sABC_model, x = Treat_name, fill = included_parameters)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_hline(yintercept = 0, colour = "#B2B2B2", linetype = 1) +
+  labs(x = "Treatment", y = bquote(sABC["t = 56"]), tag = "B") +
+  scale_y_continuous(breaks = seq(0, 2, by = 0.25), limits = c(0, 1.75)) +
+  scale_fill_manual(values = c("grey55", "white"))  +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.95, vjust = 0.2), legend.position = "none",
+        panel.grid.major.x = element_blank(), panel.grid.major.y = element_line(color = "#B2B2B2"), 
+        panel.grid.minor.y = element_line(color = "#B2B2B2"))
+
+pdf(file = "paper/figures/FigureS3_prediction_errors.pdf", width = 8, height = 11)
+grid.arrange(figures3a, figures3b, layout_matrix = matrix(c(1, 1, 1, 2, 2)))
+dev.off()
 

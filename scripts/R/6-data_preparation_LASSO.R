@@ -5,14 +5,8 @@
 # libraries
 library(readxl)
 
-
-
 # functions
-source("scripts/functions.R")
-
-df <- allData[, c("TIME", "ID_TREAT")]
-df_mx <- aggregate(TIME ~ ID_TREAT, data = df, max)
-
+source("scripts/R/functions.R")
 
 #Import data
 load("data/clean/outcomes_allData.Rdata")

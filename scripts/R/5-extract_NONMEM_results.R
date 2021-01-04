@@ -7,6 +7,7 @@ library(tidyr)
 library(ggplot2)
 library(readtext)
 library(readr)
+library(stringr)
 
 ####Import data####
 #Dictionary
@@ -15,7 +16,7 @@ dict <- read.csv("data/dictionary.csv", header = TRUE, sep = ",", quote = "",
 load("data/index_PDX_omics_data.Rdata") #from script 4
 
 #Functions
-source("scripts/functions.R")
+source("scripts/R/functions.R")
 
 
 ####Extract data from NONMEM####
@@ -177,9 +178,6 @@ allData <- rbind.data.frame(allDataKD1[allDataKD1$ID_TREAT %in% OFVs$ID_TREAT[OF
 allData$model <- NULL
 allData$converged <- NULL
 allData <- merge(OFVs[, c("ID_TREAT", "model")], allData, by = "ID_TREAT", all.y = T)
-
-#Remove bad fitting treatment, later comment: WHY?
-# allData <- allData[allData$Treat_name != "TAS266", ]
 
 outcomes <- allData %>% 
   group_by(ID_TREAT) %>% 
